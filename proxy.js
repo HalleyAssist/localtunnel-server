@@ -68,6 +68,12 @@ Proxy.prototype.start = function(cb) {
     self._maybe_destroy();
 };
 
+Proxy.prototype.stop = function(cb) {
+    const self = this;
+    const server = self.server;
+    server.close();
+};
+
 Proxy.prototype._maybe_destroy = function() {
     const self = this;
 
@@ -155,6 +161,12 @@ Proxy.prototype._cleanup = function() {
 
     // clear waiting by ending responses, (requests?)
     self.waiting.forEach(handler => handler(null));
+
+    let oldSocks = clients[id].sockets
+    debug('ending old sockets of %s', id)
+    for (let i=0; i<oldSocks.length; i++) {
+      oldSocks[i].end()
+    }
 
     self.emit('end');
 };

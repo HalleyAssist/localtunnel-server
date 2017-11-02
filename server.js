@@ -180,17 +180,7 @@ function maybe_bounce(req, res, sock, head) {
 function new_client(id, opt, cb) {
   
     if (clients[id]) {
-      // Trust the most recent request for a socket
-      try {
-        // Close dangling sockets
-        let oldSocks = clients[id].sockets
-        debug('ending old sockets of %s', id)
-        for (let i=0; i<oldSocks.length; i++) {
-          oldSocks[i].end()
-        }
-      } catch (e) {
-        debug('ouch, %s', e)
-      }
+      clients[id].stop()
     }
 
     const popt = {
@@ -272,14 +262,7 @@ module.exports = function(opt) {
 
     app.get('/:req_id', function(req, res, next) {
         const req_id = req.params.req_id;
-        /*
-        // limit requested hostnames to 63 characters
-        if (! /^[a-z0-9]{4,63}$/.test(req_id)) {
-            const err = new Error('Invalid subdomain. Subdomains must be lowercase and between 4 and 63 alphanumeric characters.');
-            err.statusCode = 403;
-            return next(err);
-        }
-        */
+
         debug('making new client with id %s', req_id);
         new_client(req_id, opt, function(err, info) {
             if (err) {
