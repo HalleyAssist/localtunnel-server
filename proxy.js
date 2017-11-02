@@ -162,8 +162,8 @@ Proxy.prototype._cleanup = function() {
     // clear waiting by ending responses, (requests?)
     self.waiting.forEach(handler => handler(null));
 
-    let oldSocks = clients[id].sockets
-    debug('ending old sockets of %s', id)
+    let oldSocks = self.sockets
+    debug('ending old sockets of %s', self.id)
     for (let i=0; i<oldSocks.length; i++) {
       oldSocks[i].end()
     }
