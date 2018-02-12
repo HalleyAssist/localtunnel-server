@@ -87,7 +87,7 @@ Proxy.prototype._maybe_destroy = function() {
         catch (err) {
             self._cleanup();
         }
-    }, 5000);
+    }, 15000);
 }
 
 // new socket connection from client for tunneling requests to client
