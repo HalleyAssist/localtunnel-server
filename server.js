@@ -98,14 +98,18 @@ function proxy_client(client, req, res, sock, finished){
         // regular http request
 
         const agent = new BindingAgent({
-            socket: socket
+            socket: socket,
+            keepalive: true
         });
+
+        req.headers["Connection"] = "keep-alive";
 
         const opt = {
             path: req.url,
             agent: agent,
             method: req.method,
-            headers: req.headers
+            headers: req.headers,
+            shouldKeepAlive: true
         };
 
         await new Promise((resolve) => {
