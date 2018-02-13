@@ -18,7 +18,7 @@ const Proxy = function(opt) {
     self.id = opt.id;
 
     // default max is 10
-    self.max_tcp_sockets = opt.max_tcp_sockets || 10;
+    self.max_tcp_sockets = opt.max_tcp_sockets || 20;
 
     // new tcp server to service requests for this client
     self.server = net.createServer();

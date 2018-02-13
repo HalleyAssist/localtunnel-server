@@ -215,6 +215,7 @@ function new_client(id, opt, cb) {
         max_tcp_sockets: opt.max_tcp_sockets
     };
 
+    //TODO: hand over old connections and phase out as per minimum connection threshold
     const client = Proxy(popt);
 
     // add to clients map immediately
