@@ -2,6 +2,7 @@ import net from 'net';
 import EventEmitter from 'events';
 import log from 'bookrc';
 import Debug from 'debug';
+import { clearTimeout } from 'timers';
 
 const debug = Debug('localtunnel:server');
 
@@ -68,6 +69,14 @@ Proxy.prototype.start = function(cb) {
     self._maybe_destroy();
 };
 
+Proxy.prototype._clearConnTimeout = function(){
+    const self = this;
+    if(self.conn_timeout){
+        clearTimeout(self.conn_timeout)
+        self.conn_timeout = undefined
+    }
+}
+
 Proxy.prototype.stop = function(cb) {
     const self = this;
     const server = self.server;
@@ -77,14 +86,15 @@ Proxy.prototype.stop = function(cb) {
 Proxy.prototype._maybe_destroy = function() {
     const self = this;
 
-    clearTimeout(self.conn_timeout);
+    self._clearConnTimeout()
     self.conn_timeout = setTimeout(function() {
         // sometimes the server is already closed but the event has not fired?
         try {
-            clearTimeout(self.conn_timeout);
+            self._clearConnTimeout()
             self.server.close();
         }
         catch (err) {
+            log.error("An error ocured while closing, forcing cleanup. Err: %s", err)
             self._cleanup();
         }
     }, 15000);
@@ -99,10 +109,10 @@ Proxy.prototype._handle_socket = function(socket) {
         return socket.end();
     }
 
-    //self.debug('new connection from: %s:%s', socket.address().address, socket.address().port);
+    self.debug('new connection from: %s:%s', socket.address().address, socket.address().port);
 
     // a single connection is enough to keep client id slot open
-    clearTimeout(self.conn_timeout);
+    self._clearConnTimeout()
 
     socket.once('close', function(had_error) {
         //self.debug('closed socket (error: %s)', had_error);
@@ -155,9 +165,9 @@ Proxy.prototype._process_waiting = function() {
 
 Proxy.prototype._cleanup = function() {
     const self = this;
-    self.debug('closed tcp socket for client(%s)', self.id);
+    self.debug('closed listening tcp socket for client(%s)', self.id);
 
-    clearTimeout(self.conn_timeout);
+    self._clearConnTimeout()
 
     // clear waiting by ending responses, (requests?)
     self.waiting.forEach(handler => handler(null));
