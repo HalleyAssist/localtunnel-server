@@ -9,6 +9,7 @@ import Promise from 'bluebird';
 import Proxy from './proxy';
 import rand_id from './lib/rand_id';
 import BindingAgent from './lib/BindingAgent';
+import { setTimeout } from 'timers';
 
 const debug = Debug('localtunnel:server');
 
@@ -37,57 +38,15 @@ const stats = {
     tunnels: 0
 };
 
-// handle proxying a request to a client
-// will wait for a tunnel socket to become available
-function maybe_bounce(req, res, sock, head) {
-    // without a hostname, we won't know who the request is for
-    const hubname = req.headers['x-hub'];
-    if (!hubname) {
-        debug('No hubname!')
-        return false;
-    }
-
-    const client = clients[hubname];
-
-    // we use 502 error to the client to signify we can't service the request
-    if (!client) {
-        if (res) {
-            res.statusCode = 502;
-            res.end(`no active client for '${hubname}'`);
-            req.connection.destroy();
-        }
-        else if (sock) {
-            sock.destroy();
-        }
-        return true;
-    }
-
-    let finished = false;
-    if (sock) {
-        sock.once('end', function() {
-            finished = true;
-        });
-    }
-    else if (res) {
-        // flag if we already finished before we get a socket
-        // we can't respond to these requests
-        on_finished(res, function(err) {
-            finished = true;
-            req.connection.destroy();
-        });
-    }
-    // not something we are expecting, need a sock or a res
-    else {
-        req.connection.destroy();
-        return true;
-    }
+function proxy_client(client, req, res, sock, finished){
+    
 
     // TODO add a timeout, if we run out of sockets, then just 502
 
     // get client port
     client.next_socket(async (socket) => {
         // the request already finished or client disconnected
-        if (finished) {
+        if (finished()) {
             return;
         }
 
@@ -172,6 +131,70 @@ function maybe_bounce(req, res, sock, head) {
             req.pipe(client_req);
         });
     });
+}
+
+// handle proxying a request to a client
+// will wait for a tunnel socket to become available
+function maybe_bounce(req, res, sock, head) {
+    // without a hostname, we won't know who the request is for
+    const hubname = req.headers['x-hub'];
+    if (!hubname) {
+        debug('No hubname!')
+        return false;
+    }
+
+    const client = clients[hubname];
+
+    let finished = false;
+    if (sock) {
+        sock.once('end', function() {
+            finished = true;
+        });
+    }
+    else if (res) {
+        // flag if we already finished before we get a socket
+        // we can't respond to these requests
+        on_finished(res, function(err) {
+            finished = true;
+            req.connection.destroy();
+        });
+    }
+    // not something we are expecting, need a sock or a res
+    else {
+        req.connection.destroy();
+        return;
+    }
+
+    // we use 502 error to the client to signify we can't service the request
+    if (client) {
+        proxy_client(client, req, res, sock, ()=>finished);
+    } else {
+        let iTry = 0
+        const tryProxy = function(){
+            if(finished){
+                return;
+            }
+            
+            if(iTry++ > 30){
+                if (res) {
+                    res.statusCode = 502;
+                    res.end(`no active client for '${hubname}'`);
+                    req.connection.destroy();
+                }
+                else if (sock) {
+                    sock.destroy();
+                }
+                return
+            }
+
+            if (client) {
+                proxy_client(client, req, res, sock, ()=>finished);
+            }else{
+                setTimeout(tryProxy, 250);
+            }
+        }
+        setTimeout(tryProxy, 250);        
+    }
 
     return true;
 }
