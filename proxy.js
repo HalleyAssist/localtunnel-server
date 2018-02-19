@@ -227,6 +227,7 @@ Proxy.prototype.next_socket = function(handler) {
 
     // socket is a tcp connection back to the user hosting the site
     const sock = self.sockets.shift();
+    //TODO: ensure the most recent listeners sockets are returned first
 
     if (!sock) {
         self.debug('no more client, queue callback');
