@@ -7,7 +7,6 @@ import http_proxy from 'http-proxy';
 import http from 'http';
 import Promise from 'bluebird';
 import Proxy from './proxy';
-import rand_id from './lib/rand_id';
 import BindingAgent from './lib/BindingAgent';
 import { setTimeout } from 'timers';
 
@@ -205,40 +204,44 @@ function maybe_bounce(req, res, sock, head) {
 
 // create a new tunnel with `id`
 function new_client(id, opt, cb) {
-  
+    var client
     if (clients[id]) {
-      clients[id].stop()
-    }
+        client = clients[id]
+        client.refreshListener(function(err, info){
+            info.id = id;
+            cb(err, info)
+        })
+    }else{
+        const popt = {
+            id: id,
+            max_tcp_sockets: opt.max_tcp_sockets
+        };
 
-    const popt = {
-        id: id,
-        max_tcp_sockets: opt.max_tcp_sockets
-    };
+        //TODO: hand over old connections and phase out as per minimum connection threshold
+        const client = Proxy(popt);
 
-    //TODO: hand over old connections and phase out as per minimum connection threshold
-    const client = Proxy(popt);
+        // add to clients map immediately
+        // avoiding races with other clients requesting same id
+        clients[id] = client;
 
-    // add to clients map immediately
-    // avoiding races with other clients requesting same id
-    clients[id] = client;
-
-    client.on('end', function() {
-        --stats.tunnels;
-        delete clients[id];
-    });
-
-    client.start((err, info) => {
-        if (err) {
+        client.on('end', function() {
+            --stats.tunnels;
             delete clients[id];
-            cb(err);
-            return;
-        }
+        });
 
-        ++stats.tunnels;
+        client.start((err, info) => {
+            if (err) {
+                delete clients[id];
+                cb(err);
+                return;
+            }
 
-        info.id = id;
-        cb(err, info);
-    });
+            ++stats.tunnels;
+
+            info.id = id;
+            cb(err, info);
+        });
+    }
 }
 
 module.exports = function(opt) {
@@ -247,25 +250,6 @@ module.exports = function(opt) {
     const schema = opt.secure ? 'https' : 'http';
 
     const app = express();
-
-    app.get('/', function(req, res, next) {
-        if (req.query['new'] === undefined) {
-            return next();
-        }
-
-        const req_id = rand_id();
-        debug('making new client with id %s', req_id);
-        new_client(req_id, opt, function(err, info) {
-            if (err) {
-                res.statusCode = 500;
-                return res.end(err.message);
-            }
-
-            const url = schema + '://' + req_id + '.' + req.headers.host;
-            info.url = url;
-            res.json(info);
-        });
-    });
 
     app.get('/', function(req, res, next) {
         res.redirect('https://halleyassist.com');

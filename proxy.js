@@ -20,9 +20,6 @@ const Proxy = function(opt) {
     // default max is 10
     self.max_tcp_sockets = opt.max_tcp_sockets || 20;
 
-    // new tcp server to service requests for this client
-    self.server = net.createServer();
-
     // track initial user connection setup
     self.conn_timeout = undefined;
 
@@ -31,17 +28,10 @@ const Proxy = function(opt) {
 
 Proxy.prototype.__proto__ = EventEmitter.prototype;
 
-Proxy.prototype.start = function(cb) {
-    const self = this;
-    const server = self.server;
-
-    if (self.started) {
-        cb(new Error('already started'));
-        return;
-    }
-    self.started = true;
-
-    server.on('close', self._cleanup.bind(self));
+Proxy.prototype._openListener = function(server, cb){
+    server.on('close', function(){
+        self.debug("Closing listener on port %d", server.address().port)
+    });
     server.on('connection', self._handle_socket.bind(self));
 
     server.on('error', function(err) {
@@ -67,6 +57,31 @@ Proxy.prototype.start = function(cb) {
     });
 
     self._maybe_destroy();
+}
+
+Proxy.prototype.refreshListener = function (cb){
+    const self = this
+    const replacementServer = net.createServer();
+    this._openListener(replacementServer, function(err, value){
+        self.server = replacementServer
+        self._maybe_destroy();
+        cb(err, value)
+    })
+}
+
+Proxy.prototype.start = function(cb) {
+    const self = this;
+    const server = self.server;
+
+    if (self.started) {
+        cb(new Error('already started'));
+        return;
+    }
+    self.started = true;
+
+    // new tcp server to service requests for this client
+    self.server = net.createServer();
+    self._openListener(self.server, cb)
 };
 
 Proxy.prototype._clearConnTimeout = function(){
@@ -80,7 +95,7 @@ Proxy.prototype._clearConnTimeout = function(){
 Proxy.prototype.stop = function(cb) {
     const self = this;
     const server = self.server;
-    server.close();
+    if(server) server.close();
 };
 
 Proxy.prototype._maybe_destroy = function() {
@@ -94,25 +109,13 @@ Proxy.prototype._maybe_destroy = function() {
             self.server.close();
         }
         catch (err) {
-            log.error("An error ocured while closing, forcing cleanup. Err: %s", err)
-            self._cleanup();
+            log.error("An error ocured while closing, Err: %s", err)
         }
-    }, 15000);
+    }, 60000);
 }
 
-// new socket connection from client for tunneling requests to client
-Proxy.prototype._handle_socket = function(socket) {
+Proxy.prototype._setup_new_socket = function(socket){
     const self = this;
-
-    // no more socket connections allowed
-    if (self.sockets.length >= self.max_tcp_sockets) {
-        return socket.end();
-    }
-
-    self.debug('new connection from: %s:%s', socket.address().address, socket.address().port);
-
-    // a single connection is enough to keep client id slot open
-    self._clearConnTimeout()
 
     socket.once('close', function(had_error) {
         //self.debug('closed socket (error: %s)', had_error);
@@ -148,9 +151,47 @@ Proxy.prototype._handle_socket = function(socket) {
     
     // Calls to socket.end are made after clients lose power
     socket.setTimeout(4*60*1000)
-    socket.on('timeout', socket.end)
+    socket.on('timeout', function(){
+        socket.end()
+    })
+}
+
+Proxy.prototype._addSocket = function(socket){
+    const self = this;
     
+    if (self.sockets.length >= self.max_tcp_sockets) {
+        const listeningAddress = self.server.address()
+        for(var i in self.sockets){
+            const s = self.sockets[i]
+            if(s.localPort != listeningAddress.port){
+                s.end()
+                self.sockets.splice(i, 1)
+            }
+        }
+        if (self.sockets.length >= self.max_tcp_sockets) {
+            //Nothing was removed!
+            return socket.end();
+        }
+    }
     self.sockets.push(socket);
+}
+
+// new socket connection from client for tunneling requests to client
+Proxy.prototype._handle_socket = function(socket) {
+    const self = this;
+
+    self.debug('new connection from: %s:%s', socket.address().address, socket.address().port);
+
+    // a single connection is enough to keep client id slot open
+    self._clearConnTimeout()
+
+    // Add socket
+    self._addSocket(socket)
+
+    // Configure socket
+    self._setup_new_socket(socket)
+    
+    // Is anyone waiting on a socket?
     self._process_waiting();
 };
 
@@ -194,22 +235,22 @@ Proxy.prototype.next_socket = function(handler) {
     }
 
     handler(sock)
-    .catch((err) => {
-        log.error(err);
-    })
-    .finally(() => {
-        if (!sock.destroyed) {
-            self.debug('retuning socket');
-            self.sockets.push(sock);
-        }
+        .catch((err) => {
+            log.error(err);
+        })
+        .finally(() => {
+            if (!sock.destroyed) {
+                self.debug('retuning socket');
+                self.sockets.push(sock);
+            }
 
-        // no sockets left to process waiting requests
-        if (self.sockets.length === 0) {
-            return;
-        }
+            // no sockets left to process waiting requests
+            if (self.sockets.length === 0) {
+                return;
+            }
 
-        self._process_waiting();
-    });
+            self._process_waiting();
+        });
 };
 
 Proxy.prototype._done = function() {
