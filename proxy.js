@@ -29,6 +29,8 @@ const Proxy = function(opt) {
 Proxy.prototype.__proto__ = EventEmitter.prototype;
 
 Proxy.prototype._openListener = function(server, cb){
+    const self = this
+    
     server.on('close', function(){
         self.debug("Closing listener on port %d", server.address().port)
     });
