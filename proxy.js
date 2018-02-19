@@ -242,7 +242,7 @@ Proxy.prototype.next_socket = function(handler) {
         .finally(() => {
             if (!sock.destroyed) {
                 self.debug('retuning socket');
-                self.sockets.push(sock);
+                self._addSocket(sock)
             }
 
             // no sockets left to process waiting requests
