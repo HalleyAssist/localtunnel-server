@@ -172,31 +172,40 @@ function maybe_bounce(req, res, sock, head) {
     if (client) {
         proxy_client(client, req, res, sock, ()=>finished);
     } else {
-        let iTry = 0
-        const tryProxy = function(){
-            if(finished){
-                return;
-            }
-            
-            if(iTry++ > 30){
-                if (res) {
-                    res.statusCode = 502;
-                    res.end(`no active client for '${hubname}'`);
-                    req.connection.destroy();
-                }
-                else if (sock) {
-                    sock.destroy();
-                }
-                return
-            }
-
-            if (client) {
-                proxy_client(client, req, res, sock, ()=>finished);
-            }else{
-                setTimeout(tryProxy, 250);
-            }
+        if(req.headers['x-check']){
+            res.statusCode = 502;
+            res.end(`no active client for '${hubname}'`);
+            return
         }
-        setTimeout(tryProxy, 250);        
+        const tryProxy = function(){
+            let iTry = 0
+
+            var s = function(){
+                if(finished){
+                    return;
+                }
+                
+                if(iTry++ > 30){
+                    if (res) {
+                        res.statusCode = 502;
+                        res.end(`no active client for '${hubname}'`);
+                        req.connection.destroy();
+                    }
+                    else if (sock) {
+                        sock.destroy();
+                    }
+                    return
+                }
+
+                if (client) {
+                    proxy_client(client, req, res, sock, ()=>finished);
+                }else{
+                    setTimeout(s, 250);
+                }
+            }
+            return s
+        }
+        setTimeout(tryProxy(), 250);        
     }
 
     return true;
