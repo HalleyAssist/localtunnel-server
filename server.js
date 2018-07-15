@@ -298,7 +298,12 @@ module.exports = function(opt) {
     });
 
     app.use(function(err, req, res, next) {
+        debug("An error occurred in express. Err: %s", err)
         const status = err.statusCode || err.status || 500;
+        if (res.headersSent) {
+            return next(err)
+        }
+
         res.status(status).json({
             message: err.message
         });
