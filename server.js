@@ -175,7 +175,7 @@ function maybe_bounce(req, res, sock, head) {
         if(req.headers['x-check']){
             res.statusCode = 502;
             res.end(`no active client for '${hubname}'`);
-            return
+            return true
         }
         const tryProxy = function(){
             let iTry = 0
