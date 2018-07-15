@@ -1,6 +1,5 @@
 import log from 'bookrc';
 import express from 'express';
-import tldjs from 'tldjs';
 import on_finished from 'on-finished';
 import Debug from 'debug';
 import http_proxy from 'http-proxy';

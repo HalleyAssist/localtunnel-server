@@ -23,8 +23,7 @@
     "http-proxy": "1.14.0",
     "localenv": "0.2.2",
     "on-finished": "2.3.0",
-    "optimist": "0.6.1",
-    "tldjs": "1.6.2"
+    "optimist": "0.6.1"
   },
   "devDependencies": {
     "mocha": "2.5.3",
