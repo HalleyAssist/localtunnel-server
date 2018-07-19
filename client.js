@@ -28,16 +28,16 @@ console.log('Subscriber connected to port 12345');
 sock.on('message', function(topic, message) {
     var client = new net.Socket();
     const messageId = message.readUInt16LE()
-    client.connect(80, '127.0.0.1', function() {
-        debug("Connected to backend")
-        debug("Request: %s", message.slice(2).toString())
-        client.write(message.slice(2));
-    });
     client.on('data', function(chunk) {
         sockReply.send([topic.toString() + ':' + messageId, chunk], zmq.ZMQ_SNDMORE);
     });
     client.on('close', function() {
         debug("Sent response %d to remote", messageId)
         sockReply.send([topic.toString() + ':' + messageId, ""]);
+    });
+    client.connect(80, '127.0.0.1', function() {
+        debug("Connected to backend")
+        debug("Request: %s", message.slice(2).toString())
+        client.write(message.slice(2));
     });
 });
