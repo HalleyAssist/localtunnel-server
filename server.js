@@ -101,7 +101,7 @@ server.on('request', function(req, res) {
     zPublish.send([hubname, bufferInt + buffer], postData)
     if (postData) {
         req.on('data', function (data) {
-            zPublish.send([hubname, data], zmq.ZMQ_SNDMORE)
+            zPublish.send([hubname, data], 2)
         })
         req.on('end', function () {
             zPublish.send([hubname, ""])
