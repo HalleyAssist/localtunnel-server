@@ -36,7 +36,7 @@ sock.on('message', function(topic, ...messages) {
     client.on('end', function() {
         debug("Sent response %d to remote", messageId)
         sockReply.send([topic.toString() + ':' + messageId, ""]);
-        client.close()
+        client.end()
     });
     client.connect(80, '127.0.0.1', function() {
         debug("Connected to backend")
@@ -52,9 +52,7 @@ sock.on('message', function(topic, ...messages) {
                 return deferred.promise
             })
         })
-        chain.then(function(){
-            client.end()
-        }, function(err){
+        chain.catch(function(err){
             debug(err)
         })
     });
