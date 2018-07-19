@@ -30,6 +30,7 @@ sock.on('message', function(topic, message) {
     const messageId = message.readUInt16LE()
     client.connect(80, '127.0.0.1', function() {
         debug("Connected to backend")
+        debug("Request: %s", message.slice(2).toString())
         client.write(message.slice(2));
     });
     var data = new DynamicBuffer(4096);
