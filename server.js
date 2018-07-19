@@ -43,13 +43,12 @@ zReply.on('message', function(topic, message) {
 })
 
 server.on('request', function(req, res) {
-    /*const hubname = req.headers['x-hub'];
+    const hubname = req.headers['x-hub'];
     if (!hubname) {
         debug('No hubname!')
         error_output(res, "Invalid Hub")
         return false;
-    }*/
-    const hubname = "test"
+    }
 
     req.on('error', (err) => {
         console.error('request', err);
