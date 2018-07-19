@@ -2,7 +2,6 @@ import log from 'bookrc';
 import express from 'express';
 import on_finished from 'on-finished';
 import Debug from 'debug';
-import http_proxy from 'http-proxy';
 import http from 'http';
 import Promise from 'bluebird';
 import Proxy from './proxy';
@@ -10,21 +9,6 @@ import BindingAgent from './lib/BindingAgent';
 import { setTimeout } from 'timers';
 
 const debug = Debug('localtunnel:server');
-
-const proxy = http_proxy.createProxyServer({
-    target: 'http://localtunnel.github.io'
-});
-
-proxy.on('error', function(err) {
-    log.error(err);
-});
-
-proxy.on('proxyReq', function(proxyReq, req, res, options) {
-    // rewrite the request so it hits the correct url on github
-    // also make sure host header is what we expect
-    proxyReq.path = '/www' + proxyReq.path;
-    proxyReq.setHeader('host', 'localtunnel.github.io');
-});
 
 const PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -261,16 +245,6 @@ module.exports = function(opt) {
 
     app.get('/', function(req, res, next) {
         res.redirect('https://halleyassist.com');
-    });
-
-    // TODO(roman) remove after deploying redirect above
-    app.get('/assets/*', function(req, res, next) {
-        proxy.web(req, res);
-    });
-
-    // TODO(roman) remove after deploying redirect above
-    app.get('/favicon.ico', function(req, res, next) {
-        proxy.web(req, res);
     });
 
     app.get('/api/status', function(req, res, next) {
