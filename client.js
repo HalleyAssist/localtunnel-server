@@ -31,7 +31,7 @@ sock.on('message', function(topic, message) {
         debug("Connected to backend")
         client.write(message.slice(2));
     });
-    var data = "";
+    var data = new Buffer();
     client.on('data', function(chunk) {
         data += chunk;
     });
