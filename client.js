@@ -25,9 +25,10 @@ sock.subscribe(fs.readFileSync('/data/hub-id', 'utf8'));
 
 console.log('Subscriber connected to port 12345');
 
-sock.on('message', function(topic, message) {
+sock.on('message', function(topic, ...messages) {
     var client = new net.Socket();
-    const messageId = message.readUInt16LE()
+    var firstMessage = messages[0]
+    const messageId = firstMessage.readUInt16LE()
     client.on('data', function(chunk) {
         sockReply.send([topic.toString() + ':' + messageId, chunk], 2);
     });
@@ -38,7 +39,22 @@ sock.on('message', function(topic, message) {
     });
     client.connect(80, '127.0.0.1', function() {
         debug("Connected to backend")
-        debug("Request: %s", message.slice(2).toString())
-        client.write(message.slice(2));
+        messages[0] = firstMessage.slice(2)
+        var chain = Q()
+        messages.forEach(function(chunk, index){
+            if(index % 2 == 1) return
+            chain = chain.then(function(){
+                var deferred = Q.defer()
+                client.write(chunk, function(){
+                    deferred.resolve(chunk)
+                })
+                return deferred.promise
+            })
+        })
+        chain.then(function(){
+            client.end()
+        }, function(err){
+            debug(err)
+        })
     });
 });

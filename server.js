@@ -32,12 +32,12 @@ function error_output(res, err){
 var messageId = 0
 
 var wanted = {}
-zReply.on('message', function(topic, message) {
-    topic = topic.toString()
+zReply.on('message', function(topic, ...messages) {
+    var topic = topic.toString()
     var promise = wanted[topic]
-    debug("Received %s: %s", topic.toString(), message.toString())
+    debug("Received %s in %d parts", topic.toString(), messages.length)
     if(promise){
-        promise.resolve(message)
+        promise.resolve(messages)
     }else{
         debug("Unknown %s", topic)
     }
@@ -85,8 +85,21 @@ server.on('request', function(req, res) {
     const timeout = setTimeout(function(){
         deferred.reject("timeout")
     }, ResponseTimeout)
-    deferred.promise.then(function(response){
-        req.connection.end(response)
+    deferred.promise.then(function(responses){
+        var chain = Q()
+        responses.forEach(function(chunk, index){
+            if(index % 2 == 1) return
+            chain = chain.then(function(){
+                var deferred = Q.defer()
+                req.connection.write(chunk, function(){
+                    deferred.resolve(chunk)
+                })
+                return deferred.promise
+            })
+        })
+        return chain.then(function(){
+            req.connection.end()
+        })
     }, function(err){
         error_output(res, err)
     }).fail(function(err){
