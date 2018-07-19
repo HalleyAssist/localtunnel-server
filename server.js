@@ -1,321 +1,117 @@
-import log from 'bookrc';
-import express from 'express';
-import on_finished from 'on-finished';
-import Debug from 'debug';
-import http from 'http';
-import Promise from 'bluebird';
-import Proxy from './proxy';
-import BindingAgent from './lib/BindingAgent';
-import { setTimeout } from 'timers';
+const zmq = require('zmq'),
+      z85 = require('z85'),
+      http = require ('http'),
+      Q = require('q'),
+      debug = require('debug')('ztunnel:server'),
+      ResponseTimeout = 60000
 
-const debug = Debug('localtunnel:server');
+// Setup a rep "server"
+// Although ZMQ doesn't typically think of sockets as "server" or "client", the security mechanisms are different in that there should always be a "server" side that handles the authentication piece.
+var zPublish = zmq.socket('pub');
+var zReply = zmq.socket('sub');
+zPublish.identity = "rep-socket";
 
-const PRODUCTION = process.env.NODE_ENV === 'production';
+// Tell the socket that we want it to be a CURVE "server"
+//zPublish.curve_server = 1;
+// Set the private key for the server so that it can decrypt messages (it does not need its public key)
+//zPublish.curve_secretkey = serverPrivateKey;
+// We'll also set a domain, but this is optional for the CURVE mechanism
+//zPublish.zap_domain = "test";
 
-// id -> client http server
-const clients = Object.create(null);
+// This is just typical rep bind stuff. 
+zPublish.bindSync('tcp://0.0.0.0:12345');
+zReply.bindSync('tcp://0.0.0.0:12346');
 
-// proxy statistics
-const stats = {
-    tunnels: 0
-};
+const server = http.createServer();
 
-function proxy_client(client, req, res, sock, finished){
-    
-
-    // TODO add a timeout, if we run out of sockets, then just 502
-
-    // get client port
-    client.next_socket(async (socket) => {
-        // the request already finished or client disconnected
-        if (finished()) {
-            return;
-        }
-
-        // happens when client upstream is disconnected (or disconnects)
-        // and the proxy iterates the waiting list and clears the callbacks
-        // we gracefully inform the user and kill their conn
-        // without this, the browser will leave some connections open
-        // and try to use them again for new requests
-        // we cannot have this as we need bouncy to assign the requests again
-        // TODO(roman) we could instead have a timeout above
-        // if no socket becomes available within some time,
-        // we just tell the user no resource available to service request
-        else if (!socket) {
-            if (res) {
-                res.statusCode = 504;
-                res.end();
-            }
-
-            if (sock) {
-                sock.destroy();
-            }
-
-            req.connection.destroy();
-            return;
-        }
-
-        // websocket requests are special in that we simply re-create the header info
-        // and directly pipe the socket data
-        // avoids having to rebuild the request and handle upgrades via the http client
-        if (res === null) {
-            const arr = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
-            for (let i=0 ; i < (req.rawHeaders.length-1) ; i+=2) {
-                arr.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i+1]}`);
-            }
-
-            arr.push('');
-            arr.push('');
-
-            socket.pipe(sock).pipe(socket);
-            socket.write(arr.join('\r\n'));
-
-            await new Promise((resolve) => {
-                socket.once('end', resolve);
-            });
-
-            return;
-        }
-
-        // regular http request
-
-        const agent = new BindingAgent({
-            socket: socket,
-            keepalive: true
-        });
-
-        req.headers["Connection"] = "keep-alive";
-
-        const opt = {
-            path: req.url,
-            agent: agent,
-            method: req.method,
-            headers: req.headers,
-            shouldKeepAlive: true
-        };
-
-        await new Promise((resolve) => {
-            // what if error making this request?
-            const client_req = http.request(opt, function(client_res) {
-                // write response code and headers
-                res.writeHead(client_res.statusCode, client_res.headers);
-
-                client_res.pipe(res);
-                on_finished(client_res, function(err) {
-                    resolve();
-                });
-            });
-
-            // happens if the other end dies while we are making the request
-            // so we just end the req and move on
-            // we can't really do more with the response here because headers
-            // may already be sent
-            client_req.on('error', (err) => {
-                req.connection.destroy();
-            });
-
-            req.pipe(client_req);
-        });
-    });
+function error_output(res, err){
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({error: err}))
 }
 
-// handle proxying a request to a client
-// will wait for a tunnel socket to become available
-function maybe_bounce(req, res, sock, head) {
-    // without a hostname, we won't know who the request is for
-    const hubname = req.headers['x-hub'];
+var messageId = 0
+
+var wanted = {}
+zReply.on('message', function(topic, message) {
+    topic = topic.toString()
+    var promise = wanted[topic]
+    if(promise){
+        promise.resolve(message)
+    }else{
+        debug("Unknown %s", topic)
+    }
+})
+
+server.on('request', function(req, res) {
+    /*const hubname = req.headers['x-hub'];
     if (!hubname) {
         debug('No hubname!')
+        error_output(res, "Invalid Hub")
         return false;
-    }
+    }*/
+    const hubname = "test"
 
-    const client = clients[hubname];
+    req.on('error', (err) => {
+        console.error('request', err);
+    });
 
-    let finished = false;
-    if (sock) {
-        sock.once('end', function() {
-            finished = true;
-        });
-    }
-    else if (res) {
-        // flag if we already finished before we get a socket
-        // we can't respond to these requests
-        on_finished(res, function(err) {
-            finished = true;
-            req.connection.destroy();
-        });
-    }
-    // not something we are expecting, need a sock or a res
-    else {
-        req.connection.destroy();
-        return;
-    }
+    res.on('error', (err) => {
+        console.error('response', err);
+    });
 
-    // we use 502 error to the client to signify we can't service the request
-    if (client) {
-        proxy_client(client, req, res, sock, ()=>finished);
-    } else {
-        if(req.headers['x-check']){
-            res.statusCode = 502;
-            res.end(`no active client for '${hubname}'`);
-            return true
+    const arr = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
+    for (let i=0 ; i < (req.rawHeaders.length-1) ; i+=2) {
+        const headerKey = req.rawHeaders[i];
+        if(headerKey != "Connection"){
+            arr.push(`${headerKey}: ${req.rawHeaders[i+1]}`);
         }
-        const tryProxy = function(){
-            let iTry = 0
-
-            var s = function(){
-                if(finished){
-                    return;
-                }
-                
-                if(iTry++ > 30){
-                    if (res) {
-                        res.statusCode = 502;
-                        res.end(`no active client for '${hubname}'`);
-                        req.connection.destroy();
-                    }
-                    else if (sock) {
-                        sock.destroy();
-                    }
-                    return
-                }
-
-                if (client) {
-                    proxy_client(client, req, res, sock, ()=>finished);
-                }else{
-                    setTimeout(s, 250);
-                }
-            }
-            return s
-        }
-        setTimeout(tryProxy(), 250);        
     }
+    arr.push('Connection: close');
 
-    return true;
-}
+    arr.push('');
+    arr.push('');
 
-// create a new tunnel with `id`
-function new_client(id, opt, cb) {
-    var client
-    if (clients[id]) {
-        client = clients[id]
-        client.refreshListener(function(err, info){
-            info.id = id;
-            cb(err, info)
+    var buffer = Buffer.from(arr.join("\r\n"), 'utf8');
+
+    /* request id */
+    var bufferInt = new Buffer(2);
+    bufferInt.writeUInt16LE(messageId)
+
+    const topic = hubname + ":" + messageId
+    zReply.subscribe(topic)
+
+    const deferred = Q.defer()
+    wanted[topic] = deferred
+    const timeout = setTimeout(function(){
+        deferred.reject("timeout")
+    }, ResponseTimeout)
+    deferred.promise.then(function(response){
+        req.connection.end(response)
+    }, function(err){
+        error_output(res, err)
+    }).fail(function(err){
+        debug("Critical error: %s", err)
+    }).finally(function(){
+        delete wanted[topic]
+        clearTimeout(timeout)
+        zReply.unsubscribe(topic)
+    })
+    
+    const postData = req.method == 'POST' || req.method == 'PUT'
+    zPublish.send([hubname, bufferInt + buffer], postData)
+    if (postData) {
+        req.on('data', function (data) {
+            zPublish.send([hubname, data], zmq.ZMQ_SNDMORE)
         })
-    }else{
-        const popt = {
-            id: id,
-            max_tcp_sockets: opt.max_tcp_sockets
-        };
-
-        //TODO: hand over old connections and phase out as per minimum connection threshold
-        const client = Proxy(popt);
-
-        // add to clients map immediately
-        // avoiding races with other clients requesting same id
-        clients[id] = client;
-
-        client.on('end', function() {
-            --stats.tunnels;
-            delete clients[id];
-        });
-
-        client.start((err, info) => {
-            if (err) {
-                delete clients[id];
-                cb(err);
-                return;
-            }
-
-            ++stats.tunnels;
-
-            info.id = id;
-            cb(err, info);
-        });
+        req.on('end', function () {
+            zPublish.send([hubname, ""])
+        })
     }
-}
 
-module.exports = function(opt) {
-    opt = opt || {};
+    messageId = (messageId + 1) % 65500
+});
 
-    const schema = opt.secure ? 'https' : 'http';
 
-    const app = express();
-
-    app.get('/', function(req, res, next) {
-        res.redirect('https://halleyassist.com');
-    });
-
-    app.get('/api/status', function(req, res, next) {
-        res.json({
-            tunnels: stats.tunnels,
-            mem: process.memoryUsage(),
-        });
-    });
-
-    app.get('/:req_id', function(req, res, next) {
-        const req_id = req.params.req_id;
-
-        debug('making new client with id %s', req_id);
-        new_client(req_id, opt, function(err, info) {
-            if (err) {
-                return next(err);
-            }
-
-            const url = schema + '://' + req_id + '.' + req.headers.host;
-            info.url = url;
-            res.json(info);
-        });
-
-    });
-
-    app.use(function(err, req, res, next) {
-        debug("An error occurred in express. Err: %s", err)
-        const status = err.statusCode || err.status || 500;
-        if (res.headersSent) {
-            return next(err)
-        }
-
-        res.status(status).json({
-            message: err.message
-        });
-    });
-
-    const server = http.createServer();
-
-    server.on('request', function(req, res) {
-
-        req.on('error', (err) => {
-            console.error('request', err);
-        });
-
-        res.on('error', (err) => {
-            console.error('response', err);
-        });
-
-        if (maybe_bounce(req, res, null, null)) {
-            return;
-        };
-
-        app(req, res);
-    });
-
-    server.on('upgrade', function(req, socket, head) {
-        req.on('error', (err) => {
-            console.error('ws req', err);
-        });
-
-        socket.on('error', (err) => {
-            console.error('ws socket', err);
-        });
-
-        if (maybe_bounce(req, null, socket, head)) {
-            return;
-        };
-
-        socket.destroy();
-    });
-
-    return server;
-};
+server.listen(8001, "0.0.0.0", 128, function() {
+    debug("Started")
+})
