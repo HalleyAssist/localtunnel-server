@@ -27,7 +27,7 @@ console.log('Subscriber connected to port 12345');
 sock.on('message', function(topic, message) {
     var client = new net.Socket();
     const messageId = message.readUInt16LE()
-    client.connect(3000, '127.0.0.1', function() {
+    client.connect(80, '127.0.0.1', function() {
         debug("Connected to backend")
         client.write(message.slice(2));
     });
