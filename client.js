@@ -1,5 +1,6 @@
 var zmq = require('zmq'),
     net = require('net'),
+    fs = require('fs'),
     debug = require('debug')('ztunnel:client')
 
 var sock = zmq.socket('sub');
