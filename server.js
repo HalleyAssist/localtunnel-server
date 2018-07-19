@@ -35,6 +35,7 @@ var wanted = {}
 zReply.on('message', function(topic, message) {
     topic = topic.toString()
     var promise = wanted[topic]
+    debug("Received %s: %s", topic.toString(), message.toString())
     if(promise){
         promise.resolve(message)
     }else{

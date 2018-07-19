@@ -33,9 +33,8 @@ sock.on('message', function(topic, message) {
         debug("Request: %s", message.slice(2).toString())
         client.write(message.slice(2));
     });
-    var data = new DynamicBuffer(4096);
     client.on('data', function(chunk) {
-        data.concat(chunk);
+        sockReply.send([topic.toString() + ':' + messageId, chunk], zmq.ZMQ_SNDMORE);
     });
     client.on('close', function() {
         debug("Sending response of %d length to remote", data.length)
