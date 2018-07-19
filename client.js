@@ -1,6 +1,7 @@
 var zmq = require('zmq'),
     net = require('net'),
     fs = require('fs'),
+    Q = require('q'),
     DynamicBuffer = require('DynamicBuffer'),
     debug = require('debug')('ztunnel:client')
 
