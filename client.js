@@ -31,7 +31,7 @@ sock.on('message', function(topic, message) {
     client.on('data', function(chunk) {
         sockReply.send([topic.toString() + ':' + messageId, chunk], zmq.ZMQ_SNDMORE);
     });
-    client.on('close', function() {
+    client.on('end', function() {
         debug("Sent response %d to remote", messageId)
         sockReply.send([topic.toString() + ':' + messageId, ""]);
     });
