@@ -1,6 +1,7 @@
 var zmq = require('zmq'),
     net = require('net'),
     fs = require('fs'),
+    DynamicBuffer = require('DynamicBuffer'),
     debug = require('debug')('ztunnel:client')
 
 var sock = zmq.socket('sub');
@@ -31,12 +32,12 @@ sock.on('message', function(topic, message) {
         debug("Connected to backend")
         client.write(message.slice(2));
     });
-    var data = new Buffer();
+    var data = new DynamicBuffer(4096);
     client.on('data', function(chunk) {
-        data += chunk;
+        data.concat(chunk);
     });
     client.on('close', function() {
         debug("Sending response of %d length to remote", data.length)
-        sockReply.send([topic.toString() + ':' + messageId, data]);
+        sockReply.send([topic.toString() + ':' + messageId, data.getBuffer()]);
     });
 });
