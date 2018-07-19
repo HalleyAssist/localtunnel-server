@@ -38,6 +38,6 @@ sock.on('message', function(topic, message) {
     });
     client.on('close', function() {
         debug("Sent response %d to remote", messageId)
-        sockReply.send([topic.toString() + ':' + messageId, data.getBuffer()]);
+        sockReply.send([topic.toString() + ':' + messageId, ""]);
     });
 });
