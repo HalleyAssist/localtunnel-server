@@ -54,6 +54,15 @@ server.listen(2345, "0.0.0.0")
     httpServer.on('request', function(req, res) {
         debug("Received request for %s", req.url)
         
+    
+        req.on('error', (err) => {
+            console.error('request', err);
+        });
+    
+        res.on('error', (err) => {
+            console.error('response', err);
+        });
+
         var hubname
         if(process.env.HUBNAME){
             hubname = process.env.HUBNAME
@@ -67,14 +76,9 @@ server.listen(2345, "0.0.0.0")
         }
 
         const session = clients[hubname]
-    
-        req.on('error', (err) => {
-            console.error('request', err);
-        });
-    
-        res.on('error', (err) => {
-            console.error('response', err);
-        });
+        if(!session){
+            return error_output("no active client")
+        }
     
         var stream = session.request ()
     
