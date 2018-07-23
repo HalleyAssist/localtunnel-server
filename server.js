@@ -35,27 +35,28 @@ server
             session.destroy()
         })
         .on('stream', (stream) => {
+            debug("New authenticating stream")
             stream
-            .on('error', (err) => debug("stream (1) error: %s", err))
-            .on('data', (data) => {
-                var hubId = data.toString()
-                clients[hubId] = session
-                session.on('error', (err) => {
-                    if(clients[hubId] == session){
-                        delete clients[hubId]
-                    }
+                .on('error', (err) => debug("stream (1) error: %s", err))
+                .on('data', (data) => {
+                    var hubId = data.toString()
+                    clients[hubId] = session
+                    session.on('error', (err) => {
+                        if(clients[hubId] == session){
+                            delete clients[hubId]
+                        }
+                    })
+                    stream.end("OK")
+                    debug("Authenticated %s client", hubId)
                 })
-                stream.end("OK")
-                debug("Authenticated %s client", hubId)
-            })
-            .on('end', () => {
-                debug(`server stream ${stream.id} ended`)
-                stream.end()
-            })
-            .on('finish', () => {
-                debug(`server stream ${stream.id} finished`)
-            })
-      })
+                .on('end', () => {
+                    debug(`server stream ${stream.id} ended`)
+                    stream.end()
+                })
+                .on('finish', () => {
+                    debug(`server stream ${stream.id} finished`)
+                })
+        })
   })
 
 server.listen(2345, "0.0.0.0")

@@ -21,7 +21,7 @@ function doAuthenticate(client){
             deferred.reject("Error: %s", response)
         }
     })
-    stream.end()
+    stream.end(hubname)
 
     setTimeout(()=>deferred.reject("timeout authenticating"), 3000)
 
