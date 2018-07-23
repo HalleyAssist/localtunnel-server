@@ -3,7 +3,6 @@ var {Server, Client} = require('quic'),
     fs = require('fs'),
     Q = require('q'),
     pump = require('pump'),
-    DynamicBuffer = require('DynamicBuffer'),
     debug = require('debug')('qtunnel:client')
 
 const hubname = process.env.HUBNAME ? process.env.HUBNAME : fs.readFileSync('/data/hub-id', 'utf8')
@@ -31,17 +30,28 @@ function doAuthenticate(client){
 function waitingPing(client, pingTimeout = 4000){
     var deferred = Q.defer()
 
+    /* Every 1s until we catch it */
+    var timeouts = []
+    for(var i = 1000; i < pingTimeout; i+= 1000){
+        timeouts.push(setTimeout(function(){
+            client.ping().fail(()=>{})
+        }, i))
+    }
+
     setTimeout(()=>deferred.reject("timeout waiting on pong"), pingTimeout)
     client.ping().then(function(){
         /* Fast Poll for network activity */
         const interval = setInterval(function(){
-            if(!client.closing && client.lastNetworkActivityTime && Date.now() - client.lastNetworkActivityTime <= 15){
+            if(!client.closing && client.lastNetworkActivityTime && Date.now() - client.lastNetworkActivityTime <= 20){
                 debug("Ping response received")
                 deferred.resolve(false)
             }
         }, 10)
 
         deferred.promise.catch(function(){}).then(function(){
+            for(var i = 0; i<timeouts.length; i++){
+                clearTimeout(timeouts[i])
+            }
             clearInterval(interval)
         })
     }, deferred.reject)
@@ -96,11 +106,15 @@ var pingHandle
 function doPing(client){
     var p
     if(!client || client.destroyed){
+        if(!client) debug("Re-connecting as not connected")
+        else debug("Re-connecting as client was destroyed")
+
         client = null
         p = doConnection()
     }else{
         p = waitingPing(client)
-            .catch(function(){
+            .catch(function(err){
+                debug("Re-connecting due to %s", err)
                 client = null
                 return doConnection()
             })
