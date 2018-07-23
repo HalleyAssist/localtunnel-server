@@ -33,7 +33,9 @@ var destroyer = function (stream, reading, writing, callback) {
 
     if (isRequest(stream)) return stream.abort() // request.destroy just do .end - .abort is what we want
 
-    if (isFn(stream.end)) return stream.end()
+    if (isFn(stream.end)) return stream.end(function(){
+      stream.destroy()
+    })
 
     callback(err || new Error('stream was destroyed'))
   }
