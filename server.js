@@ -28,6 +28,7 @@ server
                     }
                 })
                 stream.end("OK")
+                debug("Authenticated %s client", hubId)
             })
             .on('end', () => {
                 debug(`server stream ${stream.id} ended`)
