@@ -106,7 +106,7 @@ async function main(){
         .on('stream', function(stream) {
             debug("New stream")
             var client = new net.Socket();
-            client.connect(3000, '192.168.1.252', function() {
+            client.connect(80, '127.0.0.1', function() {
                 debug("Connected to backend")
                 stream.pipe(client).pipe(stream)
                 client.on('end', function() {
