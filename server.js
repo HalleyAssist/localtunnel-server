@@ -99,7 +99,7 @@ server.listen(2345, "0.0.0.0")
     
         stream.on("error", err=>{
             debug(err)
-            error_output("An error occurred communicating with the backend")
+            error_output(res, "An error occurred communicating with the backend")
             stream.end()
         })
     
