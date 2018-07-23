@@ -78,7 +78,7 @@ server.listen(2345, "0.0.0.0")
 
         const session = clients[hubname]
         if(!session){
-            return error_output("no active client")
+            return error_output(res, "no active client")
         }
     
         var stream = session.request ()
