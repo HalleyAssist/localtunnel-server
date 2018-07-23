@@ -1,8 +1,26 @@
 const {Server, Client} = require('quic'),
       http = require ('http'),
       Q = require('q'),
+      pump = require('pump'),
       debug = require('debug')('qtunnel:server'),
       ResponseTimeout = 60000
+
+function doLingeringClose(stream){
+    var deferred = Q.defer()
+    stream.close()
+    var timer = setTimeout(deferred.resolve, 3000)
+    stream.on('data', function(){
+        if(!stream.destroyed){
+            clearTimeout(timer)
+            timer = setTimeout(deferred.resolve, 3000)
+        }
+    })
+    deferred.promise.then(function(){
+        if(!stream.destroyed){
+            stream.destroy()
+        }
+    })
+}
 
 // ---------- Server ----------
 const clients = {}
@@ -81,8 +99,14 @@ server.listen(2345, "0.0.0.0")
             return error_output(res, "no active client")
         }
     
-        var stream = session.request ()
-    
+        var stream
+        try {
+            stream = session.request ()
+        }catch(ex){
+            debug("Unable to request stream: %s", ex)
+            return error_output(res, "internal error: unable to request stream")
+        }
+
         const arr = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
         for (let i=0 ; i < (req.rawHeaders.length-1) ; i+=2) {
             const headerKey = req.rawHeaders[i];
@@ -105,6 +129,12 @@ server.listen(2345, "0.0.0.0")
     
         const postData = req.method == 'POST' || req.method == 'PUT'
         var deferred = Q.defer()
+        pump(stream, req.connection, function(){
+            req.connection.end()
+            stream.end()
+            doLingeringClose(stream)
+            doLingeringClose(req.connection)
+        })
         stream.write(buffer, function(err){
             if(err){
                 deferred.reject("Stream write error: ", + err)
@@ -115,9 +145,8 @@ server.listen(2345, "0.0.0.0")
         })
         stream.on('end', function(){
             debug("Stream ended, destroy stream")
-            stream.close()
+            doLingeringClose(stream)
         })
-        stream.pipe(req.connection)
         deferred.promise.then(function(){
             if (postData) {
                 req.pipe(stream)

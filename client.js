@@ -2,6 +2,7 @@ var {Server, Client} = require('quic'),
     net = require('net'),
     fs = require('fs'),
     Q = require('q'),
+    pump = require('pump'),
     DynamicBuffer = require('DynamicBuffer'),
     debug = require('debug')('qtunnel:client')
 
@@ -55,7 +56,8 @@ function doConnectionHandler(client){
             var client = new net.Socket();
             client.connect(80, '127.0.0.1', function() {
                 debug("Connected to backend")
-                stream.pipe(client).pipe(stream)
+                stream.pipe(client)
+                pump(client, stream)
                 client.on('end', function() {
                     debug("Sent response to remote")
                     //client.end()
