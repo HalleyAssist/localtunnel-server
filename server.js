@@ -115,7 +115,7 @@ server.listen(2345, "0.0.0.0")
         })
         stream.on('end', function(){
             debug("Stream ended, destroy stream")
-            stream.destroy()
+            stream.close()
         })
         stream.pipe(req.connection)
         deferred.promise.then(function(){
