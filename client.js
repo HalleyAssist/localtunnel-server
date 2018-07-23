@@ -34,7 +34,7 @@ function waitingPing(client, pingTimeout = 4000){
     var timeouts = []
     for(var i = 1000; i < pingTimeout; i+= 1000){
         timeouts.push(setTimeout(function(){
-            client.ping().fail(()=>{})
+            client.ping().catch(()=>{})
         }, i))
     }
 
