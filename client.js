@@ -8,12 +8,13 @@ var {Server, Client} = require('quic'),
 const hubname = process.env.HUBNAME ? process.env.HUBNAME : fs.readFileSync('/data/hub-id', 'utf8')
 var cli = new Client()
 function doAuthenticate(cli){
-    debug("Starting authentication process")
+    debug("Starting authentication process as %s", hubname)
     var deferred = Q.defer()
     var stream = cli.request()
     stream.on('data', (data) => {
         const response = data.toString()
         if(response == "OK"){
+            debug("Authenticated")
             deferred.resolve(cli)
         }else{
             debug("Invalid authentication response: %s", response)
