@@ -95,8 +95,8 @@ function doPing(cli){
     }else{
         p = waitingPing()
             .catch(function(){
-                doConnection()
                 cli = null
+                return doConnection()
             })
     }
     return p
