@@ -31,7 +31,7 @@ function waitingPing(pingTimeout = 2000){
     cli.ping().then(function(){
         /* Fast Poll for network activity */
         const interval = setInterval(function(){
-            if(Date.now() - cli.lastActivityTime <= 15){
+            if(!cli.closing && cli.lastNetworkActivityTime && Date.now() - cli.lastNetworkActivityTime <= 15){
                 debug("Ping response received")
                 deferred.resolve(true)
             }
