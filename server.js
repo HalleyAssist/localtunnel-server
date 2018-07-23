@@ -113,6 +113,10 @@ server.listen(2345, "0.0.0.0")
             debug("Headers written")
             deferred.resolve(true)
         })
+        stream.on('end', function(){
+            debug("Stream ended, destroy stream")
+            stream.destroy()
+        })
         stream.pipe(req.connection)
         deferred.promise.then(function(){
             if (postData) {
