@@ -20,11 +20,11 @@ function doAuthenticate(){
     })
     stream.write(hubname)
 
-    setTimeout(()=>deferred.reject("timeout authenticating"), 2000)
+    setTimeout(()=>deferred.reject("timeout authenticating"), 3000)
 
     return deferred.promise
 }
-function waitingPing(pingTimeout = 2000){
+function waitingPing(pingTimeout = 4000){
     var deferred = Q.defer()
 
     setTimeout(()=>deferred.reject("timeout waiting on pong"), pingTimeout)
@@ -65,7 +65,7 @@ function doConnectionHandler(cli){
     pingHandle = setTimeout(function(){
         doPing(cli)
     }, 3000)
-    
+
     debug("Ready for operation")
 }
 function doConnection(port = 2345){
