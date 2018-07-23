@@ -1,6 +1,6 @@
 var once = require('once'),
     eos = require('end-of-stream'),
-    debug = require('debug')('qtunnel:pump'),
+    debug = require('debug')('qtunnel:pump')
 
 var noop = function () {}
 
@@ -24,7 +24,7 @@ var destroyer = function (stream, reading, writing, callback) {
   eos(stream, {readable: reading, writable: writing}, function (err) {
     if (err) return callback(err)
     closed = true
-    debug("closed = true via eos")
+    debug("closed = true via   eos")
     callback()
   })
 
