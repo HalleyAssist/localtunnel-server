@@ -44,68 +44,7 @@ function waitingPing(pingTimeout = 2000){
 
     return deferred.promise
 }
-function doConnection(port = 2345){
-    if(cli.destroyed){
-        cli = new Client()
-    }
-    const addr = process.env.MOTHERSHIP_API || "localhost"
-    return cli.connect(port, addr)
-        .then(function(){
-            if(cli.destroyed){
-                cli = new Client()
-                return Q.reject("Destroyed")
-            }
-            cli.timeout = 6000
-            return waitingPing()
-        }).then(function(){
-            debug('Client connected to port %d', port);
-        }).then(doAuthenticate)
-}
-function doPing(){
-    var p
-    if(cli.destroyed){
-        cli = new Client()
-        p = doConnection()
-    }else{
-        p = waitingPing()
-            .catch(function(){
-                if(cli.destroyed){
-                    cli = new Client()
-                }
-                return doConnection()
-            })
-    }
-    return p
-        .then(function(){
-            setTimeout(doPing, 5000)    
-        },
-        function(err){
-            if(typeof err === "undefined") err = "timeout"
-            debug("Failed to (re)connect: %s", err)
-            setTimeout(doPing, 1000)
-        })
-}
-
-async function main(){
-    debug("Performing initial connection")
-    var connected = false
-    while(!connected){
-        await doConnection().then(function(){
-            connected = true
-        }, function(err){
-            if(typeof err === "undefined") err = "timeout"
-            cli = new Client()
-            debug("QUIC connection failed, err: %s", err)
-            return Q.timeout(2000).fail(()=>{})
-        })
-    }
-
-    debug("Starting pinger")
-    setTimeout(function(){
-        doPing()
-    }, 3000)
-
-    debug("Ready for operation")
+function doConnectionHandler(cli){
     cli
         .on('error', (err) => debug(Object.assign(err, { class: 'client session error' })))
         .on('stream', function(stream) {
@@ -121,5 +60,71 @@ async function main(){
                 });
             })
     });
+    
+    if(pingHandle) clearTimeout(pingHandle)
+    pingHandle = setTimeout(function(){
+        doPing(cli)
+    }, 3000)
+    
+    debug("Ready for operation")
 }
-main()
+function doConnection(port = 2345){
+    var newConnection = new Client()
+    const addr = process.env.MOTHERSHIP_API || "localhost"
+    return cli.connect(port, addr)
+        .then(function(){
+            if(cli.destroyed){
+                cli = new Client()
+                return Q.reject("Destroyed")
+            }
+            cli.timeout = 6000
+            return waitingPing()
+        }).then(function(){
+            debug('Client connected to port %d', port);
+        }).then(doAuthenticate)
+        .then(function(){
+            doConnectionHandler(newConnection)
+            cli = newConnection
+        })
+}
+var pingHandle
+function doPing(cli){
+    var p
+    if(!cli || cli.destroyed){
+        p = doConnection()
+    }else{
+        p = waitingPing()
+            .catch(function(){
+                doConnection()
+                cli = null
+            })
+    }
+    return p
+        .then(function(){
+            if(!cli) {
+                debug("Successfully (re)connected")
+            }
+            pingHandle = setTimeout(()=>doPing(cli), 5000)    
+        },
+        function(err){
+            if(typeof err === "undefined") err = "timeout"
+            debug("Failed to (re)connect: %s", err)
+            pingHandle = setTimeout(doPing, 8000)  /* doConnection */
+        })
+}
+
+async function connect(){
+    debug("Performing initial connection")
+    var connected = false
+    while(!connected){
+        await doConnection().then(function(){
+            connected = true
+        }, function(err){
+            if(typeof err === "undefined") err = "timeout"
+            cli = new Client()
+            debug("QUIC connection failed, err: %s", err)
+            return Q.timeout(2000).fail(()=>{})
+        })
+    }
+}
+connect()
