@@ -48,7 +48,8 @@ function doConnection(port = 2345){
     if(cli.destroyed){
         cli = new Client()
     }
-    return cli.connect(port)
+    const addr = process.env.MOTHERSHIP_API || "localhost"
+    return cli.connect(port, addr)
         .then(function(){
             if(cli.destroyed){
                 cli = new Client()
