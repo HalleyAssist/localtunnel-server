@@ -1,59 +1,74 @@
-var zmq = require('zmq'),
+var {Server, Client} = require('quic'),
     net = require('net'),
     fs = require('fs'),
     Q = require('q'),
     DynamicBuffer = require('DynamicBuffer'),
-    debug = require('debug')('ztunnel:client')
+    debug = require('debug')('qtunnel:client')
 
-var sock = zmq.socket('sub');
-var sockReply = zmq.socket('pub');
-
-sock.on('connect', function(fd, ep) {console.log('connect, endpoint:', ep);});
-sock.on('connect_delay', function(fd, ep) {console.log('connect_delay, endpoint:', ep);});
-sock.on('connect_retry', function(fd, ep) {console.log('connect_retry, endpoint:', ep);});
-sock.on('listen', function(fd, ep) {console.log('listen, endpoint:', ep);});
-sock.on('bind_error', function(fd, ep) {console.log('bind_error, endpoint:', ep);});
-sock.on('accept', function(fd, ep) {console.log('accept, endpoint:', ep);});
-sock.on('accept_error', function(fd, ep) {console.log('accept_error, endpoint:', ep);});
-sock.on('close', function(fd, ep) {console.log('close, endpoint:', ep);});
-sock.on('close_error', function(fd, ep) {console.log('close_error, endpoint:', ep);});
-sock.on('disconnect', function(fd, ep) {console.log('disconnect, endpoint:', ep);});
-
-sock.connect('tcp://mothership.dev.halleyassist.info:12345');
-sockReply.connect('tcp://mothership.dev.halleyassist.info:12346');
-
-sock.subscribe(fs.readFileSync('/data/hub-id', 'utf8'));
-
-console.log('Subscriber connected to port 12345');
-
-sock.on('message', function(topic, ...messages) {
-    var client = new net.Socket();
-    var firstMessage = messages[0]
-    const messageId = firstMessage.readUInt16LE()
-    client.on('data', function(chunk) {
-        sockReply.send([topic.toString() + ':' + messageId, chunk], 2);
-    });
-    client.on('end', function() {
-        debug("Sent response %d to remote", messageId)
-        sockReply.send([topic.toString() + ':' + messageId, ""]);
-        client.end()
-    });
-    client.connect(80, '127.0.0.1', function() {
-        debug("Connected to backend")
-        messages[0] = firstMessage.slice(2)
-        var chain = Q()
-        messages.forEach(function(chunk, index){
-            if(index % 2 == 1) return
-            chain = chain.then(function(){
-                var deferred = Q.defer()
-                client.write(chunk, function(){
-                    deferred.resolve(chunk)
-                })
-                return deferred.promise
+var cli = new Client()
+function doConnection(){
+    return cli.connect(2345)
+        .then(function(){
+            if(cli.destroyed){
+                throw new Error("Destroyed")
+            }
+            return cli.ping()
+        }).then(function(){
+            debug('Client connected to port 2345');
+        })
+}
+function doPing(){
+    var p
+    if(cli.destroyed){
+        cli = new Client()
+        p = doConnection()
+    }else{
+        p = cli.ping()
+            .catch(function(){
+                if(cli.destroyed){
+                    cli = new Client()
+                }
+                return doConnection()
             })
+    }
+    return p
+        .then(function(){
+            setTimeout(doPing, 5000)    
+        },
+        function(err){
+            debug("Failed to (re)connect: %s", err)
+            setTimeout(doPing, 1000)
         })
-        chain.catch(function(err){
-            debug(err)
+}
+
+async function main(){
+    var connected = false
+    while(!connected){
+        await doConnection().then(function(){
+            connected = true
+        }, function(ex){
+            debug("QUIC connection failed")
         })
+    }
+    setTimeout(function(){
+        doPing()
+    }, 3000)
+
+    cli
+        .on('error', (err) => debug(Object.assign(err, { class: 'client session error' })))
+        .on('stream', function(stream) {
+            debug("New stream")
+            var client = new net.Socket();
+            client.connect(3000, '192.168.1.252', function() {
+                debug("Connected to backend")
+                stream.pipe(client)
+                client.pipe(stream)
+                client.on('end', function() {
+                    debug("Sent response to remote")
+                    //client.end()
+                    //stream.end()
+                });
+            })
     });
-});
+}
+main()

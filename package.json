@@ -25,7 +25,7 @@
     "on-finished": "2.3.0",
     "optimist": "0.6.1",
     "q": "1.5.1",
-    "quic": "^0.4.2"
+    "quic": "git+https://github.com/HalleyAssist/quic.git"
   },
   "devDependencies": {
     "mocha": "2.5.3",
