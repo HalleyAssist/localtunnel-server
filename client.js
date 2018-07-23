@@ -74,13 +74,12 @@ function doConnectionHandler(cli){
 function doConnection(port = 2345){
     var newConnection = new Client()
     const addr = process.env.MOTHERSHIP_API || "localhost"
-    return cli.connect(port, addr)
+    return newConnection.connect(port, addr)
         .then(function(){
-            if(cli.destroyed){
-                cli = new Client()
+            if(newConnection.destroyed){
                 return Q.reject("Destroyed")
             }
-            cli.timeout = 6000
+            newConnection.timeout = 6000
             return waitingPing()
         }).then(function(){
             debug('Client connected to port %d', port);
