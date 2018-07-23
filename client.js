@@ -7,14 +7,16 @@ var {Server, Client} = require('quic'),
 
 const hubname = process.env.HUBNAME ? process.env.HUBNAME : fs.readFileSync('/data/hub-id', 'utf8')
 var cli = new Client()
-function doAuthenticate(){
+function doAuthenticate(cli){
+    debug("Starting authentication process")
     var deferred = Q.defer()
     var stream = cli.request()
     stream.on('data', (data) => {
         const response = data.toString()
         if(response == "OK"){
-            deferred.resolve(true)
+            deferred.resolve(cli)
         }else{
+            debug("Invalid authentication response: %s", response)
             deferred.reject("Error: %s", response)
         }
     })
@@ -81,6 +83,7 @@ function doConnection(port = 2345){
             return waitingPing()
         }).then(function(){
             debug('Client connected to port %d', port);
+            return newConnection /* for doAuthenticate */
         }).then(doAuthenticate)
         .then(function(){
             doConnectionHandler(newConnection)
