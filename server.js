@@ -83,17 +83,6 @@ httpServer.on('request', function(req, res) {
         }
     }).done()
 
-    responses.forEach(function(chunk, index){
-        if(index % 2 == 1) return
-        chain = chain.then(function(){
-            var deferred = Q.defer()
-            req.connection.write(chunk, function(){
-                deferred.resolve(chunk)
-            })
-            return deferred.promise
-        })
-    })
-
     stream.on('data', (data) => {
         req.connection.write(data)
       })
