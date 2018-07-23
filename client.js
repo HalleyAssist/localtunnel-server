@@ -87,6 +87,7 @@ function doPing(){
 }
 
 async function main(){
+    debug("Performing initial connection")
     var connected = false
     while(!connected){
         await doConnection().then(function(){
@@ -98,10 +99,13 @@ async function main(){
             return Q.timeout(2000).fail(()=>{})
         })
     }
+
+    debug("Starting pinger")
     setTimeout(function(){
         doPing()
     }, 3000)
 
+    debug("Ready for operation")
     cli
         .on('error', (err) => debug(Object.assign(err, { class: 'client session error' })))
         .on('stream', function(stream) {

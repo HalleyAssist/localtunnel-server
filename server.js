@@ -53,7 +53,7 @@ server.listen(2345, "0.0.0.0")
     }
     
     httpServer.on('request', function(req, res) {
-        debug("Received request for %s", req.url)
+        debug("Received %s request for %s", req.method, req.url)
         
     
         req.on('error', (err) => {
