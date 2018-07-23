@@ -2,7 +2,7 @@ var {Server, Client} = require('quic'),
     net = require('net'),
     fs = require('fs'),
     Q = require('q'),
-    pump = require('pump'),
+    pump = require('./pump'),
     debug = require('debug')('qtunnel:client')
 
 const hubname = process.env.HUBNAME ? process.env.HUBNAME : fs.readFileSync('/data/hub-id', 'utf8')
