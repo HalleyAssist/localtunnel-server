@@ -6,16 +6,16 @@ var {Server, Client} = require('quic'),
     debug = require('debug')('qtunnel:client')
 
 const hubname = process.env.HUBNAME ? process.env.HUBNAME : fs.readFileSync('/data/hub-id', 'utf8')
-var cli = new Client()
-function doAuthenticate(cli){
+
+function doAuthenticate(client){
     debug("Starting authentication process as %s", hubname)
     var deferred = Q.defer()
-    var stream = cli.request()
+    var stream = client.request()
     stream.on('data', (data) => {
         const response = data.toString()
         if(response == "OK"){
             debug("Authenticated")
-            deferred.resolve(cli)
+            deferred.resolve(client)
         }else{
             debug("Invalid authentication response: %s", response)
             deferred.reject("Error: %s", response)
@@ -27,14 +27,14 @@ function doAuthenticate(cli){
 
     return deferred.promise
 }
-function waitingPing(pingTimeout = 4000){
+function waitingPing(client, pingTimeout = 4000){
     var deferred = Q.defer()
 
     setTimeout(()=>deferred.reject("timeout waiting on pong"), pingTimeout)
-    cli.ping().then(function(){
+    client.ping().then(function(){
         /* Fast Poll for network activity */
         const interval = setInterval(function(){
-            if(!cli.closing && cli.lastNetworkActivityTime && Date.now() - cli.lastNetworkActivityTime <= 15){
+            if(!client.closing && client.lastNetworkActivityTime && Date.now() - client.lastNetworkActivityTime <= 15){
                 debug("Ping response received")
                 deferred.resolve(false)
             }
@@ -47,8 +47,8 @@ function waitingPing(pingTimeout = 4000){
 
     return deferred.promise
 }
-function doConnectionHandler(cli){
-    cli
+function doConnectionHandler(client){
+    client
         .on('error', (err) => debug(Object.assign(err, { class: 'client session error' })))
         .on('stream', function(stream) {
             debug("New stream")
@@ -66,7 +66,7 @@ function doConnectionHandler(cli){
     
     if(pingHandle) clearTimeout(pingHandle)
     pingHandle = setTimeout(function(){
-        doPing(cli)
+        doPing(client)
     }, 3000)
 
     debug("Ready for operation")
@@ -80,7 +80,7 @@ function doConnection(port = 2345){
                 return Q.reject("Destroyed")
             }
             newConnection.timeout = 6000
-            return waitingPing()
+            return waitingPing(newConnection)
         }).then(function(){
             debug('Client connected to port %d', port);
             return newConnection /* for doAuthenticate */
@@ -91,27 +91,27 @@ function doConnection(port = 2345){
         })
 }
 var pingHandle
-function doPing(cli){
+function doPing(client){
     var p
-    if(!cli || cli.destroyed){
-        cli = null
+    if(!client || client.destroyed){
+        client = null
         p = doConnection()
     }else{
-        p = waitingPing()
+        p = waitingPing(client)
             .catch(function(){
-                cli = null
+                client = null
                 return doConnection()
             })
     }
     return p
         .then(function(_newC){
-            if(!cli){
-                cli = _newC
+            if(!client){
+                client = _newC
             }
-            if(!cli) {
+            if(!client) {
                 debug("Successfully (re)connected")
             }
-            pingHandle = setTimeout(()=>doPing(cli), 5000)    
+            pingHandle = setTimeout(()=>doPing(client), 5000)    
         },
         function(err){
             if(typeof err === "undefined") err = "timeout"
@@ -128,7 +128,6 @@ async function connect(){
             connected = true
         }, function(err){
             if(typeof err === "undefined") err = "timeout"
-            cli = new Client()
             debug("QUIC connection failed, err: %s", err)
             return Q.timeout(2000).fail(()=>{})
         })
