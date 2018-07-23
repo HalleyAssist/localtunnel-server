@@ -33,7 +33,7 @@ function waitingPing(pingTimeout = 4000){
         const interval = setInterval(function(){
             if(!cli.closing && cli.lastNetworkActivityTime && Date.now() - cli.lastNetworkActivityTime <= 15){
                 debug("Ping response received")
-                deferred.resolve(true)
+                deferred.resolve(false)
             }
         }, 10)
 
@@ -84,13 +84,14 @@ function doConnection(port = 2345){
         }).then(doAuthenticate)
         .then(function(){
             doConnectionHandler(newConnection)
-            cli = newConnection
+            return newConnection
         })
 }
 var pingHandle
 function doPing(cli){
     var p
     if(!cli || cli.destroyed){
+        cli = null
         p = doConnection()
     }else{
         p = waitingPing()
@@ -100,7 +101,10 @@ function doPing(cli){
             })
     }
     return p
-        .then(function(){
+        .then(function(_newC){
+            if(!cli){
+                cli = _newC
+            }
             if(!cli) {
                 debug("Successfully (re)connected")
             }
