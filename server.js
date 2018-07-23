@@ -7,7 +7,7 @@ const {Server, Client} = require('quic'),
 
 function doLingeringClose(stream){
     var deferred = Q.defer()
-    stream.close()
+    stream.end()
     var timer = setTimeout(deferred.resolve, 3000)
     stream.on('data', function(){
         if(!stream.destroyed){
