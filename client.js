@@ -5,17 +5,60 @@ var {Server, Client} = require('quic'),
     DynamicBuffer = require('DynamicBuffer'),
     debug = require('debug')('qtunnel:client')
 
+const hubname = process.env.HUBNAME ? process.env.HUBNAME : fs.readFileSync('/data/hub-id', 'utf8')
 var cli = new Client()
-function doConnection(){
-    return cli.connect(2345)
+function doAuthenticate(){
+    var deferred = Q.defer()
+    var stream = cli.request()
+    stream.on('data', (data) => {
+        const response = data.toString()
+        if(response == "OK"){
+            deferred.resolve(true)
+        }else{
+            deferred.reject("Error: %s", response)
+        }
+    })
+    stream.write(hubname)
+
+    setTimeout(()=>deferred.reject("timeout authenticating"), 2000)
+
+    return deferred.promise
+}
+function waitingPing(pingTimeout = 2000){
+    var deferred = Q.defer()
+
+    setTimeout(()=>deferred.reject("timeout waiting on pong"), pingTimeout)
+    cli.ping().then(function(){
+        /* Fast Poll for network activity */
+        const interval = setInterval(function(){
+            if(Date.now() - cli.lastActivityTime <= 15){
+                debug("Ping response received")
+                deferred.resolve(true)
+            }
+        }, 10)
+
+        deferred.promise.catch(function(){}).then(function(){
+            clearInterval(interval)
+        })
+    }, deferred.reject)
+
+    return deferred.promise
+}
+function doConnection(port = 2345){
+    if(cli.destroyed){
+        cli = new Client()
+    }
+    return cli.connect(port)
         .then(function(){
             if(cli.destroyed){
-                throw new Error("Destroyed")
+                cli = new Client()
+                return Q.reject("Destroyed")
             }
-            return cli.ping()
+            cli.timeout = 6000
+            return waitingPing()
         }).then(function(){
-            debug('Client connected to port 2345');
-        })
+            debug('Client connected to port %d', port);
+        }).then(doAuthenticate)
 }
 function doPing(){
     var p
@@ -23,7 +66,7 @@ function doPing(){
         cli = new Client()
         p = doConnection()
     }else{
-        p = cli.ping()
+        p = waitingPing()
             .catch(function(){
                 if(cli.destroyed){
                     cli = new Client()
@@ -36,6 +79,7 @@ function doPing(){
             setTimeout(doPing, 5000)    
         },
         function(err){
+            if(typeof err === "undefined") err = "timeout"
             debug("Failed to (re)connect: %s", err)
             setTimeout(doPing, 1000)
         })
@@ -46,8 +90,11 @@ async function main(){
     while(!connected){
         await doConnection().then(function(){
             connected = true
-        }, function(ex){
-            debug("QUIC connection failed")
+        }, function(err){
+            if(typeof err === "undefined") err = "timeout"
+            cli = new Client()
+            debug("QUIC connection failed, err: %s", err)
+            return Q.timeout(2000).fail(()=>{})
         })
     }
     setTimeout(function(){
@@ -61,8 +108,7 @@ async function main(){
             var client = new net.Socket();
             client.connect(3000, '192.168.1.252', function() {
                 debug("Connected to backend")
-                stream.pipe(client)
-                client.pipe(stream)
+                stream.pipe(client).pipe(stream)
                 client.on('end', function() {
                     debug("Sent response to remote")
                     //client.end()

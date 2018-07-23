@@ -5,14 +5,38 @@ const {Server, Client} = require('quic'),
       ResponseTimeout = 60000
 
 // ---------- Server ----------
-var session
+const clients = {}
+
 const server = new Server()
 server
-  .on('error', (err) => ilog.error(Object.assign(err, { class: 'server error' })))
-  .on('session', (_session) => {
-    // ilog.info(session)
-
-    session = _session
+  .on('error', err => debug("server (1) error: %s", err))
+  .on('session', (session) => {
+    session
+        .on('error', (err) => {
+            debug("session (1) error: %s", err)
+            session.destroy()
+        })
+        .on('stream', (stream) => {
+            stream
+            .on('error', (err) => debug("stream (1) error: %s", err))
+            .on('data', (data) => {
+                var hubId = data.toString()
+                clients[hubId] = session
+                session.on('error', (err) => {
+                    if(clients[hubId] == session){
+                        delete clients[hubId]
+                    }
+                })
+                stream.end("OK")
+            })
+            .on('end', () => {
+                debug(`server stream ${stream.id} ended`)
+                stream.end()
+            })
+            .on('finish', () => {
+                debug(`server stream ${stream.id} finished`)
+            })
+      })
   })
 
 server.listen(2345)
@@ -28,12 +52,21 @@ server.listen(2345)
     }
     
     httpServer.on('request', function(req, res) {
-        /*const hubname = req.headers['x-hub'];
-        if (!hubname) {
-            debug('No hubname!')
-            error_output(res, "Invalid Hub")
-            return false;
-        }*/
+        debug("Received request for %s", req.url)
+        
+        var hubname
+        if(process.env.HUBNAME){
+            hubname = process.env.HUBNAME
+        }else{
+            hubname = req.headers['x-hub'];
+            if (!hubname) {
+                debug('No hubname!')
+                error_output(res, "Invalid Hub")
+                return false;
+            }
+        }
+
+        const session = clients[hubname]
     
         req.on('error', (err) => {
             console.error('request', err);
@@ -44,7 +77,6 @@ server.listen(2345)
         });
     
         var stream = session.request ()
-        console.log(stream)
     
         const arr = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
         for (let i=0 ; i < (req.rawHeaders.length-1) ; i+=2) {
@@ -59,6 +91,12 @@ server.listen(2345)
         arr.push('');
     
         var buffer = Buffer.from(arr.join("\r\n"), 'utf8');
+    
+        stream.on("error", err=>{
+            debug(err)
+            error_output("An error occurred communicating with the backend")
+            stream.end()
+        })
     
         const postData = req.method == 'POST' || req.method == 'PUT'
         var deferred = Q.defer()
