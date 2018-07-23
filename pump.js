@@ -1,5 +1,6 @@
-var once = require('once')
-var eos = require('end-of-stream')
+var once = require('once'),
+    eos = require('end-of-stream'),
+    debug = require('debug')('qtunnel:pump'),
 
 var noop = function () {}
 
@@ -16,12 +17,14 @@ var destroyer = function (stream, reading, writing, callback) {
 
   var closed = false
   stream.on('close', function () {
+    debug("closed = true")
     closed = true
   })
 
   eos(stream, {readable: reading, writable: writing}, function (err) {
     if (err) return callback(err)
     closed = true
+    debug("closed = true via eos")
     callback()
   })
 
@@ -33,16 +36,20 @@ var destroyer = function (stream, reading, writing, callback) {
 
     if (isRequest(stream)) return stream.abort() // request.destroy just do .end - .abort is what we want
 
-    if (isFn(stream.end)) return stream.end(function(){
-      stream.destroy()
-    })
+    if (isFn(stream.end)) {
+      debug("calling end")
+      return stream.end(function(){
+        debug("calling destroy")
+        stream.destroy()
+      })
+    }
 
     callback(err || new Error('stream was destroyed'))
   }
 }
 
-var call = function (fn) {
-  fn()
+var call = function (fn, ...args) {
+  fn(...args)
 }
 
 var pipe = function (from, to) {
@@ -62,9 +69,9 @@ var pump = function () {
     var writing = i > 0
     return destroyer(stream, reading, writing, function (err) {
       if (!error) error = err
-      if (err) destroys.forEach(call)
+      if (err) destroys.forEach(call, err)
       if (reading) return
-      destroys.forEach(call)
+      if(!err) destroys.forEach(call)
       callback(error)
     })
   })
