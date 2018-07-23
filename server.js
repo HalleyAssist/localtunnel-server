@@ -1,49 +1,33 @@
-const zmq = require('zmq'),
-      z85 = require('z85'),
+const {Server, Client} = require('quic'),
       http = require ('http'),
       Q = require('q'),
-      debug = require('debug')('ztunnel:server'),
+      debug = require('debug')('qtunnel:server'),
       ResponseTimeout = 60000
 
-// Setup a rep "server"
-// Although ZMQ doesn't typically think of sockets as "server" or "client", the security mechanisms are different in that there should always be a "server" side that handles the authentication piece.
-var zPublish = zmq.socket('pub');
-var zReply = zmq.socket('sub');
-zPublish.identity = "rep-socket";
+// ---------- Server ----------
+var session
+const server = new Server()
+server
+  .on('error', (err) => ilog.error(Object.assign(err, { class: 'server error' })))
+  .on('session', (_session) => {
+    // ilog.info(session)
 
-// Tell the socket that we want it to be a CURVE "server"
-//zPublish.curve_server = 1;
-// Set the private key for the server so that it can decrypt messages (it does not need its public key)
-//zPublish.curve_secretkey = serverPrivateKey;
-// We'll also set a domain, but this is optional for the CURVE mechanism
-//zPublish.zap_domain = "test";
+    session = _session
+  })
 
-// This is just typical rep bind stuff. 
-zPublish.bindSync('tcp://0.0.0.0:12345');
-zReply.bindSync('tcp://0.0.0.0:12346');
+server.listen(2345)
+  .then(() => {
+    debug(Object.assign({ class: 'server listen' }, server.address()))
+  })
 
-const server = http.createServer();
+const httpServer = http.createServer();
 
 function error_output(res, err){
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({error: err}))
 }
 
-var messageId = 0
-
-var wanted = {}
-zReply.on('message', function(topic, ...messages) {
-    var topic = topic.toString()
-    var promise = wanted[topic]
-    debug("Received %s in %d parts", topic.toString(), messages.length)
-    if(promise){
-        promise.resolve(messages)
-    }else{
-        debug("Unknown %s", topic)
-    }
-})
-
-server.on('request', function(req, res) {
+httpServer.on('request', function(req, res) {
     const hubname = req.headers['x-hub'];
     if (!hubname) {
         debug('No hubname!')
@@ -58,6 +42,8 @@ server.on('request', function(req, res) {
     res.on('error', (err) => {
         console.error('response', err);
     });
+
+    var stream = session.request ()
 
     const arr = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
     for (let i=0 ; i < (req.rawHeaders.length-1) ; i+=2) {
@@ -76,52 +62,45 @@ server.on('request', function(req, res) {
     /* request id */
     var bufferInt = new Buffer(2);
     bufferInt.writeUInt16LE(messageId)
-
-    const topic = hubname + ":" + messageId
-    zReply.subscribe(topic)
-
-    const deferred = Q.defer()
-    wanted[topic] = deferred
-    const timeout = setTimeout(function(){
-        deferred.reject("timeout")
-    }, ResponseTimeout)
-    deferred.promise.then(function(responses){
-        var chain = Q()
-        responses.forEach(function(chunk, index){
-            if(index % 2 == 1) return
-            chain = chain.then(function(){
-                var deferred = Q.defer()
-                req.connection.write(chunk, function(){
-                    deferred.resolve(chunk)
-                })
-                return deferred.promise
-            })
-        })
-        return chain.then(function(){
-            req.connection.end()
-        })
-    }, function(err){
-        error_output(res, err)
-    }).fail(function(err){
-        debug("Critical error: %s", err)
-    }).finally(function(){
-        delete wanted[topic]
-        clearTimeout(timeout)
-        zReply.unsubscribe(topic)
-    })
     
     const postData = req.method == 'POST' || req.method == 'PUT'
-    zPublish.send([hubname, bufferInt + buffer], postData)
-    if (postData) {
-        req.on('data', function (data) {
-            zPublish.send([hubname, data], 2)
-        })
-        req.on('end', function () {
-            zPublish.send([hubname, ""])
-        })
-    }
+    var deferred = Q.defer()
+    stream.write(postData, function(err){
+        if(err){
+            deferred.reject("Stream write error: ", + err)
+            return
+        }
+        deferred.resolve(true)
+    })
+    deferred.promise.then(function(){
+        if (postData) {
+            req.on('data', function (data) {
+                zPublish.send([hubname, data], 2)
+            })
+            req.on('end', function () {
+                zPublish.send([hubname, ""])
+            })
+        }
+    }).done()
 
-    messageId = (messageId + 1) % 65500
+    responses.forEach(function(chunk, index){
+        if(index % 2 == 1) return
+        chain = chain.then(function(){
+            var deferred = Q.defer()
+            req.connection.write(chunk, function(){
+                deferred.resolve(chunk)
+            })
+            return deferred.promise
+        })
+    })
+
+    stream.on('data', (data) => {
+        req.connection.write(data)
+      })
+      .on('end', () => {
+        debug(`server stream ${stream.id} ended`)
+        stream.end()
+      })
 });
 
 

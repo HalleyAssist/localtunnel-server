@@ -25,8 +25,7 @@
     "on-finished": "2.3.0",
     "optimist": "0.6.1",
     "q": "1.5.1",
-    "zmq": "2.15.3",
-    "zmq-zap": "0.0.3"
+    "quic": "^0.4.2"
   },
   "devDependencies": {
     "mocha": "2.5.3",
