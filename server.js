@@ -39,7 +39,7 @@ server
       })
   })
 
-server.listen(2345)
+server.listen(2345, "0.0.0.0")
   .then(() => {
     debug(Object.assign({ class: 'server listen' }, server.address()))
   })
